@@ -1,55 +1,27 @@
+import os
 import kivy
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen, ScreenManager
-from kivy.uix.image import Image
-from kivy.uix.filechooser import FileChooserListView
-import cv2
-import os
+from kivy.uix.textinput import TextInput
+from face_rec import recognize_face_register, recognize_face_for_login
 
-# Set the Kivy version
 kivy.require('1.11.1')
 
-class RegisterScreen(Screen):
-    def __init__(self, **kwargs):
-        super(RegisterScreen, self).__init__(**kwargs)
-        self.capture = None
-
-    def start_camera(self):
-        self.capture = cv2.VideoCapture(0)
-        self.ids.image_preview.texture = None
-
-    def stop_camera(self):
-        if self.capture:
-            self.capture.release()
-            self.capture = None
-
-    def capture_image(self):
-        if self.capture:
-            ret, frame = self.capture.read()
-            if ret:
-                cv2.imwrite('captured_image.jpg', frame)
-                self.display_image('captured_image.jpg')
-                self.stop_camera()
-
-    def upload_image(self, selected_file):
-        if selected_file:
-            self.display_image(selected_file[0])
-
-    def display_image(self, image_path):
-        self.ids.image_preview.source = image_path
-
+# Main application class for login and registration.
 class LoginRegisterApp(App):
+
+    # Build the application UI.
     def build(self):
         # Create a ScreenManager
-        sm = ScreenManager()
+        screen_manager = ScreenManager()
 
         # Create the main menu screen
         main_menu = Screen(name='main_menu')
         main_menu_layout = BoxLayout(orientation='vertical', spacing=10, padding=50)
-        
+
         register_button = Button(text="Register", size_hint=(None, None), size=(200, 50))
         register_button.bind(on_release=self.goto_register_screen)
 
@@ -61,54 +33,100 @@ class LoginRegisterApp(App):
 
         main_menu.add_widget(main_menu_layout)
 
+        # Create the login screen
+        login_screen = Screen(name='login_screen')
+        login_layout = BoxLayout(orientation='vertical', spacing=10, padding=50)
+
+        login_label = Label(text="Login Page")
+        back_button = Button(text="Back to Main Menu", size_hint=(None, None), size=(200, 50))
+        back_button.bind(on_release=self.goto_main_menu)
+
+        login_button = Button(text="Login with Face Recognition", size_hint=(None, None), size=(200, 50))
+        login_button.bind(on_release=self.start_camera_and_recognize)
+
+        result_label = Label(text="")  # Label to display recognition result
+        login_layout.add_widget(login_label)
+        login_layout.add_widget(back_button)
+        login_layout.add_widget(login_button)
+        login_layout.add_widget(result_label)
+
+        login_screen.add_widget(login_layout)
+
         # Create the register screen
-        register_screen = RegisterScreen(name='register_screen')
+        register_screen = Screen(name='register_screen')
         register_layout = BoxLayout(orientation='vertical', spacing=10, padding=50)
 
         register_label = Label(text="Register Page")
 
+        name_input = TextInput(hint_text="Enter your name")
+
+        save_button = Button(text="Save Images", size_hint=(None, None), size=(200, 50))
+        save_button.bind(on_release=lambda instance: self.save_images(name_input.text))
+
         start_camera_button = Button(text="Start Camera", size_hint=(None, None), size=(200, 50))
-        start_camera_button.bind(on_release=register_screen.start_camera)
-
-        stop_camera_button = Button(text="Stop Camera", size_hint=(None, None), size=(200, 50))
-        stop_camera_button.bind(on_release=register_screen.stop_camera)
-
-        capture_image_button = Button(text="Capture Image", size_hint=(None, None), size=(200, 50))
-        capture_image_button.bind(on_release=register_screen.capture_image)
-
-        image_preview = Image()
-
-        # Create a FileChooserListView widget for image upload
-        file_chooser = FileChooserListView()
-        file_chooser.bind(on_submit=register_screen.upload_image)
+        start_camera_button.bind(on_release=self.start_camera_register)
 
         back_button = Button(text="Back to Main Menu", size_hint=(None, None), size=(200, 50))
         back_button.bind(on_release=self.goto_main_menu)
 
         register_layout.add_widget(register_label)
+        register_layout.add_widget(name_input)
+        register_layout.add_widget(save_button)
         register_layout.add_widget(start_camera_button)
-        register_layout.add_widget(stop_camera_button)
-        register_layout.add_widget(capture_image_button)
-        register_layout.add_widget(file_chooser)
-        register_layout.add_widget(image_preview)
         register_layout.add_widget(back_button)
 
         register_screen.add_widget(register_layout)
 
         # Add screens to the ScreenManager
-        sm.add_widget(main_menu)
-        sm.add_widget(register_screen)
+        screen_manager.add_widget(main_menu)
+        screen_manager.add_widget(login_screen)
+        screen_manager.add_widget(register_screen)
 
-        return sm
+        self.result_label = result_label
 
-    def goto_register_screen(self, instance):
-        self.root.current = 'register_screen'
+        return screen_manager
+    
+    # Start the camera and perform face recognition.
+    def start_camera_and_recognize(self, _):
+        recognized_result = recognize_face_for_login()
+        self.show_recognized_result(recognized_result)
 
-    def goto_login_screen(self, instance):
+    # Display the recognized result.
+    def show_recognized_result(self, result):
+        message = f"Hello {result}"
+        self.result_label.text = message
+
+    # Navigate to the login screen.
+    def goto_login_screen(self, _):
         self.root.current = 'login_screen'
 
-    def goto_main_menu(self, instance):
+    # Navigate to the register screen.
+    def goto_register_screen(self, _):
+        self.root.current = 'register_screen'
+
+    # Navigate to the main menu screen.
+    def goto_main_menu(self, _):
         self.root.current = 'main_menu'
+
+    # Save detected face images to the specified directory.
+    def save_images(self, name):
+        image_dir = os.path.join("faces", f"{name}_images")
+        os.makedirs(image_dir, exist_ok=True)
+
+        for filename in os.listdir():
+            if filename.startswith("face_") and filename.endswith(".png"):
+                destination_file = os.path.join(image_dir, filename)
+                if os.path.exists(destination_file):
+                    base, ext = os.path.splitext(destination_file)
+                    i = 1
+                    while os.path.exists(destination_file):
+                        destination_file = f"{base}_{i}{ext}"
+                        i += 1
+                os.rename(filename, destination_file)
+    
+    # Start the camera for registration.
+    def start_camera_register(self, _):
+        recognize_face_register(self)
 
 if __name__ == '__main__':
     LoginRegisterApp().run()
